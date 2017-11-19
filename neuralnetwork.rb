@@ -6,13 +6,15 @@ class NeuralNetwork
     # derivateActivationFunction
     # weightedInputs - holds the weighted inputs to each layer after a feed forward, for use in back prop
     # weights
+    # learning rate - scalar which affects how much a weight changes
     attr_accessor :weights
 
     # layers is an array which defines the size of each layer of the neural network
-    def initialize(layers = [], activationFunction = SIGMOID, derivativeActivationFunction = DERIVATIVE_SIGMOID, startingWeightFunction = INVERSE_SQRT)
+    def initialize(layers = [], learningRate = 1, activationFunction = SIGMOID, derivativeActivationFunction = DERIVATIVE_SIGMOID, startingWeightFunction = INVERSE_SQRT)
         @weights = []
         @activationFunction = activationFunction
         @derivativeActivationFunction = derivativeActivationFunction
+        @learningRate = learningRate
 
         # build weights, an array of weight layers
         layers.each_with_index { |val, index|
@@ -70,7 +72,7 @@ class NeuralNetwork
             a = mapActivationFunction(z)
 
             error = (weightLayer.t * nextError).hadamard mapDerivativeActivationFunction(z) # hidden error
-            deltaW = nextError * a.t
+            deltaW = nextError * a.t * @learningRate
 
             @weights[i] = weightLayer - deltaW
 
