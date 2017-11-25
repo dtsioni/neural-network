@@ -1,23 +1,28 @@
 require 'matrix'
-require "./hadamard.rb"
 
 class NeuralNetwork
     # activationFunction
     # derivateActivationFunction
     # weightedInputs - holds the weighted inputs to each layer after a feed forward, for use in back prop
     # weights
+    # biases - holds the bias of each node in the network
     # learning rate - scalar which affects how much a weight changes
     attr_accessor :weights
 
-    # layers is an array which defines the size of each layer of the neural network
-    def initialize(layers = [], learningRate = 1, activationFunction = SIGMOID, derivativeActivationFunction = DERIVATIVE_SIGMOID, startingWeightFunction = INVERSE_SQRT)
-        @weights = []
-        @activationFunction = activationFunction
-        @derivativeActivationFunction = derivativeActivationFunction
-        @learningRate = learningRate
+    # required: layers
+    def initialize(args)
+        args = defaults.merge(args)
+        layers = args[:layers]
+        @activationFunction = args[:activationFunction]
+        @derivativeActivationFunction = args[:derivativeActivationFunction]
+        @learningRate = args[:learningRate]
 
+
+        @weights = []
+        @biases = []
         # build weights, an array of weight layers
         layers.each_with_index { |val, index|
+            @biases.push(Matrix.columns([Array.new(val){ 0 }]))
             next if index == layers.length - 1
 
             a = layers[index]
@@ -26,9 +31,18 @@ class NeuralNetwork
             @weights.push(
                 Matrix.build(b, a) {
                     |row, col|
-                    startingWeightFunction.call(a)
+                    args[:startingWeightFunction].call(a)
                 }
             )
+        }
+    end
+
+    def defaults
+        {
+            :learningRate => 1,
+            :activationFunction => SIGMOID,
+            :derivativeActivationFunction => DERIVATIVE_SIGMOID,
+            :startingWeightFunction => INVERSE_SQRT
         }
     end
 
@@ -45,15 +59,17 @@ class NeuralNetwork
             avgErr = (avgErr * n + error) / (n + 1)
             n += 1
         end
-        puts "Average error: #{avgErr}"
+        return avgErr
     end
 
     def feedForward(input)
+        layer = 0
         @weightedInputs = [input]
-        output = mapActivationFunction(input)
+        output = mapActivationFunction(input + @biases[layer])
 
         weights.each { |weightLayer|
-            output = weightLayer * output
+            layer += 1
+            output = weightLayer * output + @biases[layer]
             @weightedInputs.push(output)
             output = mapActivationFunction(output)
         }
@@ -63,9 +79,12 @@ class NeuralNetwork
     # actual and expected are matrices
     def backPropogation(actual, expected)
         nextError = (actual - expected).hadamard mapDerivativeActivationFunction(@weightedInputs.pop) # output error
+
         i = @weights.length - 1
+        j = @weights.length
 
         until i < 0 do
+            @biases[j] = @biases[j] - (nextError * @learningRate)
             weightLayer = @weights[i]
 
             z = @weightedInputs.pop
@@ -78,15 +97,23 @@ class NeuralNetwork
 
             nextError = error
             i -= 1
+            j -= 1
         end
+        @biases[j] = @biases[j] - (nextError * @learningRate)
+    end
+
+    def loadFromString(string)
+        values = Marshal.load(string)
+        @weights = values[:weights]
+        @biases = values[:biases]
+    end
+
+    def saveToString
+        Marshal.dump({weights: @weights, biases: @biases})
     end
 
     def to_s
-        Marshal.dump(@weights)
-    end
-
-    def setWeightsFromMarshaledString(marshaledWeights)
-        @weights = Marshal.load(marshaledWeights)
+        saveToString
     end
 
     def mapActivationFunction(m)
@@ -129,5 +156,29 @@ class NeuralNetwork
     DERIVATIVE_SIGMOID = Proc.new do |x|
         sig = SIGMOID.call(x)
         sig * (1 - sig)
+    end
+end
+
+class Matrix
+    # elementwise multiplication
+    def hadamard(m)
+      case m
+      when Numeric
+        Matrix.Raise ErrOperationNotDefined, "element_multiplication", self.class, m.class
+      when Vector
+        m = self.class.column_vector(m)
+      when Matrix
+      else
+        return apply_through_coercion(m, __method__)
+      end
+
+      Matrix.Raise ErrDimensionMismatch unless row_count == m.row_count && column_count == m.column_count
+
+      rows = Array.new(row_count) do |i|
+        Array.new(column_count) do|j|
+          self[i, j] * m[i, j]
+        end
+      end
+      new_matrix rows, column_count
     end
 end
